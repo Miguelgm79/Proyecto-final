@@ -6,6 +6,7 @@
 require_once '../includes/auth.php';
 require_once '../config/db.php';
 require_once '../includes/email.php';
+require_once '../includes/reservas.php';
 requiereUsuario();
 
 // Cargar bares para el desplegable
@@ -47,6 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tieneBebes = ($datos['bebes'] === 'si');
     if ($tieneBebes && $datos['num_bebes'] < 1) {
         $errores[] = 'Si llevas bebés, indica cuántos.';
+    }
+
+    // Comprobar que ese día no esté completo en ese restaurante
+    if (empty($errores) && !diaTieneSitio($pdo, $datos['id_bar'], $datos['fecha_reserva'])) {
+        $errores[] = 'Ese día ese restaurante ya tiene el máximo de '
+                   . LIMITE_RESERVAS_DIARIAS . ' reservas. Por favor, elige otro día.';
     }
 
     if (empty($errores)) {
@@ -183,8 +190,11 @@ require '../includes/header.php';
 
                     <div class="d-flex justify-content-between">
                         <a href="dashboard.php" class="btn btn-outline-secondary">Cancelar</a>
-                        <button type="submit" class="btn btn-primary">Crear reserva</button>
+                        <button type="submit" class="btn btn-primary" id="btnEnviar">Crear reserva</button>
                     </div>
+
+                    <!-- Aviso de disponibilidad (lo rellena el JS) -->
+                    <div class="alert mt-3" id="avisoDisponibilidad" style="display: none;" role="alert"></div>
 
                 </form>
             </div>
@@ -200,6 +210,56 @@ require '../includes/header.php';
             campo.style.display = (this.value === 'si') ? 'block' : 'none';
         });
     });
+
+    // ====================================================
+    // Comprobación de disponibilidad del día (AJAX)
+    // ====================================================
+    function comprobarDisponibilidad() {
+        const selectBar = document.querySelector('select[name="id_bar"]');
+        const inputFecha = document.querySelector('input[name="fecha_reserva"]');
+        const aviso = document.getElementById('avisoDisponibilidad');
+        const btn = document.getElementById('btnEnviar');
+
+        const idBar = selectBar.value;
+        const fecha = inputFecha.value;
+
+        // Si falta info, ocultamos el aviso y reactivamos el botón
+        if (!idBar || !fecha) {
+            aviso.style.display = 'none';
+            btn.disabled = false;
+            return;
+        }
+
+        const url = '../ajax/disponibilidad.php'
+                  + '?id_bar=' + encodeURIComponent(idBar)
+                  + '&fecha='  + encodeURIComponent(fecha);
+
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) return;
+                aviso.style.display = 'block';
+
+                if (!data.disponible) {
+                    aviso.className = 'alert alert-danger mt-3';
+                    aviso.textContent = 'Lo sentimos, ese día este restaurante ya tiene el máximo de '
+                                      + data.limite + ' reservas. Por favor, elige otro día.';
+                    btn.disabled = true;
+                    // Devolver el foco a la fecha para que el usuario corrija
+                    inputFecha.focus();
+                } else {
+                    const restantes = data.limite - data.total;
+                    aviso.className = 'alert alert-success mt-3';
+                    aviso.textContent = 'Día disponible. Quedan ' + restantes
+                                      + ' plaza(s) libre(s) para esa fecha.';
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => console.error('Error consultando disponibilidad:', err));
+    }
+
+    document.querySelector('select[name="id_bar"]').addEventListener('change', comprobarDisponibilidad);
+    document.querySelector('input[name="fecha_reserva"]').addEventListener('change', comprobarDisponibilidad);
 </script>
 
 <?php require '../includes/footer.php'; ?>

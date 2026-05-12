@@ -45,7 +45,7 @@ $base = rutaBase();
 <?php if ($mostrarNav && estaLogueado()): ?>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container">
-        <a class="navbar-brand py-0" href="<?= $base ?><?= $_SESSION['rol'] === 'admin' ? 'admin/dashboard.php' : 'usuario/dashboard.php' ?>">
+        <a class="navbar-brand py-0" href="<?= dashboardSegunRol() ?>">
             <img src="<?= $base ?>assets/logo-nav.svg" alt="Reservas Restaurante" height="36">
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
@@ -61,9 +61,13 @@ $base = rutaBase();
                     <li class="nav-item">
                         <a class="nav-link" href="<?= $base ?>usuario/crear_reserva.php">Nueva reserva</a>
                     </li>
-                <?php else: ?>
+                <?php elseif ($_SESSION['rol'] === 'admin'): ?>
                     <li class="nav-item">
                         <a class="nav-link" href="<?= $base ?>admin/dashboard.php">Panel de reservas</a>
+                    </li>
+                <?php else: /* superadmin */ ?>
+                    <li class="nav-item">
+                        <a class="nav-link" href="<?= $base ?>superadmin/dashboard.php">Panel general</a>
                     </li>
                 <?php endif; ?>
             </ul>

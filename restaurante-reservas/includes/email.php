@@ -105,7 +105,7 @@ function plantillaEmail($titulo, $contenido) {
     <tr><td align="center" style="padding:30px 15px;">
       <table role="presentation" width="560" cellpadding="0" cellspacing="0"
              style="max-width:560px;background:#ffffff;border-radius:8px;overflow:hidden;">
-        <tr><td style="background:#C8334F;padding:22px 30px;color:#FBE9D0;
+        <tr><td style="background:#FFFFFF;padding:22px 30px;color:#1F2937;
                        font-size:22px;font-weight:500;letter-spacing:0.5px;">
           Reservas Restaurante
         </td></tr>
@@ -197,6 +197,119 @@ function emailReservaCancelada($email, $nombre, $bar, $fecha, $hora) {
         $email,
         "Cancelación de reserva - $bar",
         plantillaEmail('Reserva cancelada', $contenido),
+        $textoPlano
+    );
+}
+
+// ============================================
+// Helper: compara reserva antigua con los datos nuevos
+// y devuelve un array con los cambios detectados
+// ============================================
+function detectarCambios(array $antiguo, array $nuevo, PDO $pdo = null) {
+    $cambios = [];
+
+    // Bar (solo se compara si el formulario incluye id_bar -> edición del usuario)
+    if (isset($nuevo['id_bar']) && $antiguo['id_bar'] != $nuevo['id_bar'] && $pdo) {
+        $stmt = $pdo->prepare("SELECT id, nombre FROM bares WHERE id IN (?, ?)");
+        $stmt->execute([$antiguo['id_bar'], $nuevo['id_bar']]);
+        $mapa = [];
+        foreach ($stmt->fetchAll() as $b) {
+            $mapa[$b['id']] = $b['nombre'];
+        }
+        $cambios['Restaurante'] = ($mapa[$antiguo['id_bar']] ?? '?')
+                                . ' → ' . ($mapa[$nuevo['id_bar']] ?? '?');
+    }
+
+    if ($antiguo['num_personas'] != $nuevo['num_personas']) {
+        $cambios['Personas'] = $antiguo['num_personas'] . ' → ' . $nuevo['num_personas'];
+    }
+
+    if ($antiguo['fecha_reserva'] !== $nuevo['fecha_reserva']) {
+        $cambios['Fecha'] = date('d/m/Y', strtotime($antiguo['fecha_reserva']))
+                          . ' → ' . date('d/m/Y', strtotime($nuevo['fecha_reserva']));
+    }
+
+    // Hora viene en formato HH:MM:SS desde la BD y HH:MM desde el formulario
+    $horaA = substr($antiguo['hora_reserva'], 0, 5);
+    $horaN = substr($nuevo['hora_reserva'], 0, 5);
+    if ($horaA !== $horaN) {
+        $cambios['Hora'] = $horaA . ' → ' . $horaN;
+    }
+
+    // Bebés: la BD guarda 0/1, el form manda 'si'/'no'
+    $bebesA = (int)$antiguo['bebes'] ? 'Sí (' . (int)$antiguo['num_bebes'] . ')' : 'No';
+    $bebesN = ($nuevo['bebes'] === 'si') ? 'Sí (' . (int)$nuevo['num_bebes'] . ')' : 'No';
+    if ($bebesA !== $bebesN) {
+        $cambios['Bebés'] = $bebesA . ' → ' . $bebesN;
+    }
+
+    if ($antiguo['telefono'] !== $nuevo['telefono']) {
+        $cambios['Teléfono'] = $antiguo['telefono'] . ' → ' . $nuevo['telefono'];
+    }
+
+    if ($antiguo['email'] !== $nuevo['email']) {
+        $cambios['Email'] = $antiguo['email'] . ' → ' . $nuevo['email'];
+    }
+
+    // Estado (solo lo cambia el admin)
+    if (isset($nuevo['estado']) && $antiguo['estado'] !== $nuevo['estado']) {
+        $cambios['Estado'] = $antiguo['estado'] . ' → ' . $nuevo['estado'];
+    }
+
+    return $cambios;
+}
+
+// ============================================
+// Email cuando se edita una reserva
+// ============================================
+function emailReservaEditada($email, $nombre, $bar, $fecha, $hora, $personas, $cambios = [], $porAdmin = false) {
+
+    $detalles = tablaDetalles([
+        'Restaurante' => $bar,
+        'Fecha'       => $fecha,
+        'Hora'        => $hora,
+        'Personas'    => (string)$personas,
+    ]);
+
+    // Bloque de cambios (si hay)
+    $cambiosHtml = '';
+    if (!empty($cambios)) {
+        $cambiosHtml  = '<p style="margin-top:20px;"><strong>Resumen de cambios:</strong></p>';
+        $cambiosHtml .= '<ul style="font-family:Arial,sans-serif;font-size:14px;line-height:1.7;">';
+        foreach ($cambios as $campo => $cambio) {
+            $cambiosHtml .= '<li><strong>' . htmlspecialchars($campo) . ':</strong> '
+                          . htmlspecialchars($cambio) . '</li>';
+        }
+        $cambiosHtml .= '</ul>';
+    }
+
+    $intro = $porAdmin
+        ? 'Un administrador del restaurante ha modificado tu reserva.'
+        : 'Tu reserva se ha modificado correctamente.';
+
+    $contenido = '
+        <p>Hola <strong>' . htmlspecialchars($nombre) . '</strong>,</p>
+        <p>' . $intro . ' Estos son los datos actualizados:</p>
+        ' . $detalles . $cambiosHtml . '
+        <p>Si no reconoces estos cambios o crees que es un error, ponte en contacto
+           con el restaurante lo antes posible.</p>
+    ';
+
+    // Versión texto plano
+    $textoPlano  = "Hola $nombre,\n\n$intro\n\n";
+    $textoPlano .= "Datos actualizados:\n";
+    $textoPlano .= "  Restaurante: $bar\n  Fecha: $fecha\n  Hora: $hora\n  Personas: $personas\n";
+    if (!empty($cambios)) {
+        $textoPlano .= "\nCambios:\n";
+        foreach ($cambios as $campo => $cambio) {
+            $textoPlano .= "  - $campo: $cambio\n";
+        }
+    }
+
+    return enviarEmail(
+        $email,
+        "Tu reserva ha sido modificada - $bar",
+        plantillaEmail('Reserva modificada', $contenido),
         $textoPlano
     );
 }

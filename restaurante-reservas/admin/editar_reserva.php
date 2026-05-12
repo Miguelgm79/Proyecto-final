@@ -6,6 +6,8 @@
 // ============================================
 require_once '../includes/auth.php';
 require_once '../config/db.php';
+require_once '../includes/email.php';
+require_once '../includes/reservas.php';
 requiereAdmin();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -69,7 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errores[] = 'Si hay bebés, indica cuántos.';
     }
 
+    // Comprobar disponibilidad solo si la reserva queda en estado 'activa'
+    // (si el admin la marca como cancelada, no ocupa plaza)
+    if (empty($errores) && $datos['estado'] === 'activa'
+        && !diaTieneSitio($pdo, $idBarAdmin, $datos['fecha_reserva'], $id)) {
+        $errores[] = 'Ese día ya tienes el máximo de '
+                   . LIMITE_RESERVAS_DIARIAS . ' reservas. Elige otro día.';
+    }
+
     if (empty($errores)) {
+        // Detectar cambios antes de actualizar
+        $cambios = detectarCambios($reserva, $datos, $pdo);
+
         $stmt = $pdo->prepare("
             UPDATE reservas SET
                 num_personas = ?, fecha_reserva = ?, hora_reserva = ?,
@@ -88,6 +101,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id,
             $idBarAdmin,
         ]);
+
+        // Avisar al usuario por email solo si hubo cambios reales
+        if (!empty($cambios)) {
+            $stmt = $pdo->prepare("SELECT nombre FROM bares WHERE id = ?");
+            $stmt->execute([$idBarAdmin]);
+            $nombreBar = $stmt->fetchColumn();
+
+            emailReservaEditada(
+                $datos['email'],
+                $reserva['nombre_usuario'],
+                $nombreBar,
+                date('d/m/Y', strtotime($datos['fecha_reserva'])),
+                $datos['hora_reserva'],
+                $datos['num_personas'],
+                $cambios,
+                true  // editado por admin
+            );
+        }
 
         header('Location: dashboard.php?msg=editada');
         exit;

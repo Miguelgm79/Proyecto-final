@@ -1,6 +1,6 @@
 # Reservas Restaurante - Proyecto 2º DAW
 
-Sistema de reservas para restaurantes con dos roles (usuario / admin), hecho en
+Sistema de reservas para restaurantes con dos roles (usuario / admin / superadmin), hecho en
 **PHP + PDO + MySQL** y **Bootstrap 5**.
 
 ---
@@ -103,22 +103,6 @@ VALUES (
 
 ---
 
-## Notificaciones por email
-
-En `includes/email.php` hay dos modos:
-
-- **Desarrollo (por defecto):** los emails se escriben en `logs/emails.log`,
-  así puedes ver el contenido sin necesidad de configurar SMTP.
-- **Producción:** descomenta la parte de `mail()` o instala **PHPMailer** con
-  Composer para envíos reales.
-
-El recordatorio "previo a la reserva" no se envía solo: necesita una **tarea
-programada** (cron en Linux, Tarea Programada en Windows) que llame a un
-script como `cron/recordatorios.php` cada cierto tiempo. Eso queda como
-ampliación, ya que la lógica del envío ya está hecha en `emailReservaCreada()`
-(se podría reutilizar para mandar el recordatorio).
-
----
 
 ## Tecnologías usadas
 

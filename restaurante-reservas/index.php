@@ -8,11 +8,7 @@ require_once 'config/db.php';
 
 // Si ya está logueado, redirigir según rol
 if (estaLogueado()) {
-    if ($_SESSION['rol'] === 'admin') {
-        header('Location: admin/dashboard.php');
-    } else {
-        header('Location: usuario/dashboard.php');
-    }
+    header('Location: ' . dashboardSegunRol());
     exit;
 }
 
@@ -36,11 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['rol']          = $user['rol'];
             $_SESSION['bar_asignado'] = $user['bar_asignado'];
 
-            if ($user['rol'] === 'admin') {
-                header('Location: admin/dashboard.php');
-            } else {
-                header('Location: usuario/dashboard.php');
-            }
+            header('Location: ' . dashboardSegunRol());
             exit;
         } else {
             $error = 'Email o contraseña incorrectos.';

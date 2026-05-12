@@ -21,11 +21,21 @@ function requiereLogin() {
     }
 }
 
+// Devuelve la URL del dashboard correspondiente al rol actual
+function dashboardSegunRol() {
+    $base = rutaBase();
+    switch ($_SESSION['rol'] ?? '') {
+        case 'superadmin': return $base . 'superadmin/dashboard.php';
+        case 'admin':      return $base . 'admin/dashboard.php';
+        default:           return $base . 'usuario/dashboard.php';
+    }
+}
+
 // Obliga a que el usuario sea admin
 function requiereAdmin() {
     requiereLogin();
     if ($_SESSION['rol'] !== 'admin') {
-        header('Location: ' . rutaBase() . 'usuario/dashboard.php');
+        header('Location: ' . dashboardSegunRol());
         exit;
     }
 }
@@ -34,7 +44,16 @@ function requiereAdmin() {
 function requiereUsuario() {
     requiereLogin();
     if ($_SESSION['rol'] !== 'usuario') {
-        header('Location: ' . rutaBase() . 'admin/dashboard.php');
+        header('Location: ' . dashboardSegunRol());
+        exit;
+    }
+}
+
+// Obliga a que el usuario sea superadmin
+function requiereSuperadmin() {
+    requiereLogin();
+    if ($_SESSION['rol'] !== 'superadmin') {
+        header('Location: ' . dashboardSegunRol());
         exit;
     }
 }
@@ -43,7 +62,9 @@ function requiereUsuario() {
 function rutaBase() {
     // Cuenta cuántos niveles hay desde el script actual hasta la raíz del proyecto
     $script = $_SERVER['SCRIPT_NAME'];
-    if (strpos($script, '/usuario/') !== false || strpos($script, '/admin/') !== false) {
+    if (strpos($script, '/usuario/') !== false
+        || strpos($script, '/admin/') !== false
+        || strpos($script, '/superadmin/') !== false) {
         return '../';
     }
     return '';

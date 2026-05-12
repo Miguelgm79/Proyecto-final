@@ -5,6 +5,8 @@
 // ============================================
 require_once '../includes/auth.php';
 require_once '../config/db.php';
+require_once '../includes/email.php';
+require_once '../includes/reservas.php';
 requiereUsuario();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -66,7 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errores[] = 'Si llevas bebés, indica cuántos.';
     }
 
+    // Comprobar que el día elegido no esté completo (excluyendo esta misma reserva)
+    if (empty($errores) && !diaTieneSitio($pdo, $datos['id_bar'], $datos['fecha_reserva'], $id)) {
+        $errores[] = 'Ese día ese restaurante ya tiene el máximo de '
+                   . LIMITE_RESERVAS_DIARIAS . ' reservas. Por favor, elige otro día.';
+    }
+
     if (empty($errores)) {
+        // Detectar qué campos han cambiado antes de actualizar
+        $cambios = detectarCambios($reserva, $datos, $pdo);
+
         $stmt = $pdo->prepare("
             UPDATE reservas SET
                 id_bar = ?, num_personas = ?, fecha_reserva = ?, hora_reserva = ?,
@@ -85,6 +96,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id,
             $_SESSION['usuario_id'],
         ]);
+
+        // Enviar email solo si realmente hubo cambios
+        if (!empty($cambios)) {
+            $stmt = $pdo->prepare("SELECT nombre FROM bares WHERE id = ?");
+            $stmt->execute([$datos['id_bar']]);
+            $nombreBar = $stmt->fetchColumn();
+
+            emailReservaEditada(
+                $datos['email'],
+                $_SESSION['nombre'],
+                $nombreBar,
+                date('d/m/Y', strtotime($datos['fecha_reserva'])),
+                $datos['hora_reserva'],
+                $datos['num_personas'],
+                $cambios,
+                false  // no es admin quien edita
+            );
+        }
 
         header('Location: dashboard.php?msg=editada');
         exit;
@@ -185,8 +214,11 @@ require '../includes/header.php';
 
                     <div class="d-flex justify-content-between">
                         <a href="dashboard.php" class="btn btn-outline-secondary">Volver</a>
-                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                        <button type="submit" class="btn btn-primary" id="btnEnviar">Guardar cambios</button>
                     </div>
+
+                    <!-- Aviso de disponibilidad (lo rellena el JS) -->
+                    <div class="alert mt-3" id="avisoDisponibilidad" style="display: none;" role="alert"></div>
 
                 </form>
             </div>
@@ -195,12 +227,63 @@ require '../includes/header.php';
 </div>
 
 <script>
+    const RESERVA_ACTUAL_ID = <?= (int)$id ?>;
+
     document.querySelectorAll('input[name="bebes"]').forEach(function (radio) {
         radio.addEventListener('change', function () {
             const campo = document.getElementById('campoNumBebes');
             campo.style.display = (this.value === 'si') ? 'block' : 'none';
         });
     });
+
+    // ====================================================
+    // Comprobación de disponibilidad del día (AJAX)
+    // ====================================================
+    function comprobarDisponibilidad() {
+        const selectBar = document.querySelector('select[name="id_bar"]');
+        const inputFecha = document.querySelector('input[name="fecha_reserva"]');
+        const aviso = document.getElementById('avisoDisponibilidad');
+        const btn = document.getElementById('btnEnviar');
+
+        const idBar = selectBar.value;
+        const fecha = inputFecha.value;
+
+        if (!idBar || !fecha) {
+            aviso.style.display = 'none';
+            btn.disabled = false;
+            return;
+        }
+
+        const url = '../ajax/disponibilidad.php'
+                  + '?id_bar=' + encodeURIComponent(idBar)
+                  + '&fecha='  + encodeURIComponent(fecha)
+                  + '&excluir=' + RESERVA_ACTUAL_ID;
+
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) return;
+                aviso.style.display = 'block';
+
+                if (!data.disponible) {
+                    aviso.className = 'alert alert-danger mt-3';
+                    aviso.textContent = 'Lo sentimos, ese día este restaurante ya tiene el máximo de '
+                                      + data.limite + ' reservas. Por favor, elige otro día.';
+                    btn.disabled = true;
+                    inputFecha.focus();
+                } else {
+                    const restantes = data.limite - data.total;
+                    aviso.className = 'alert alert-success mt-3';
+                    aviso.textContent = 'Día disponible. Quedan ' + restantes
+                                      + ' plaza(s) libre(s) para esa fecha.';
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => console.error('Error consultando disponibilidad:', err));
+    }
+
+    document.querySelector('select[name="id_bar"]').addEventListener('change', comprobarDisponibilidad);
+    document.querySelector('input[name="fecha_reserva"]').addEventListener('change', comprobarDisponibilidad);
 </script>
 
 <?php require '../includes/footer.php'; ?>
